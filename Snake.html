@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake Game — Levels, Score, Sounds</title>
+  <link rel="stylesheet" href="./Snake game/snake.css">
+</head>
+<body>
+  <div class="wrap">
+    <h1>🐍 Snake — Levels, Score & Sounds</h1>
+
+    <div class="hud">
+      <div class="left">
+        <span class="pill">Score: <span id="score">0</span></span>
+        <span class="pill">Level: <span id="level">1</span></span>
+        <span class="pill">Best: <span id="best">0</span></span>
+      </div>
+      <div class="center">
+        <button class="btn" id="startBtn">Start</button>
+        <button class="btn secondary" id="pauseBtn">Pause</button>
+        <button class="btn secondary" id="restartBtn">Restart</button>
+      </div>
+      <div class="right">
+        <span class="pill">Speed: <span id="speed">180</span>ms</span>
+      </div>
+    </div>
+
+    <div class="stage">
+      <canvas id="canv" width="400" height="400"></canvas>
+
+      <div class="overlay" id="overlay">
+        <div class="panel">
+          <h2 id="overlayTitle">Snake</h2>
+          <p id="overlayText">Eat 10 apples to level up. Use ⬆️⬇️⬅️➡️ or WASD. Avoid walls & yourself.</p>
+          <div style="margin-top:10px; display:flex; gap:8px; justify-content:center;">
+            <button class="btn" id="overlayStart">Start Game</button>
+          </div>
+          <div class="dpad" aria-label="D-Pad controls">
+            <span class="blank"></span>
+            <button data-dir="up">▲</button>
+            <span class="blank"></span>
+            <button data-dir="left">◀</button><span class="blank"></span><button data-dir="right">▶</button>
+            <span class="blank"></span><button data-dir="down">▼</button><span class="blank"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audio (replace sources with your files if desired) -->
+    <audio id="bg" loop>
+      <source src="/old-texas-126354.mp3" type="audio/mpeg" />
+    </audio>
+    <audio id="sEat"><source src="eat.mp3" type="audio/mpeg" /></audio>
+    <audio id="sLevel"><source src="level-up.mp3" type="audio/mpeg" /></audio>
+    <audio id="sOver"><source src="game-over.mp3" type="audio/mpeg" /></audio>
+  </div>
+
+  <script>
+    // ===== Canvas setup =====
+    const canvas = document.getElementById('canv');
+    const ctx = canvas.getContext('2d');
+    const GRID = 20; // 20x20 grid
+    const CELL = canvas.width / GRID;
+
+    // ===== UI elements =====
+    const elScore = document.getElementById('score');
+    const elLevel = document.getElementById('level');
+    const elBest = document.getElementById('best');
+    const elSpeed = document.getElementById('speed');
+
+    const overlay = document.getElementById('overlay');
+    const overlayTitle = document.getElementById('overlayTitle');
+    const overlayText = document.getElementById('overlayText');
+
+    document.getElementById('startBtn').addEventListener('click', start);
+    document.getElementById('pauseBtn').addEventListener('click', togglePause);
+    document.getElementById('restartBtn').addEventListener('click', restart);
+    document.getElementById('overlayStart').addEventListener('click', start);
+
+    // D-Pad buttons
+    document.querySelectorAll('.dpad button[data-dir]')
+      .forEach(btn => btn.addEventListener('click', () => setNextDir(btn.dataset.dir)));
+
+    // ===== Audio =====
+    const sBg = document.getElementById('bg');
+    const sEat = document.getElementById('sEat');
+    const sLevel = document.getElementById('sLevel');
+    const sOver = document.getElementById('sOver');
+
+    // ===== Game state =====
+    const initialSpeed = 180;     // ms per move (Level 1)
+    const minSpeed = 60;          // fastest allowed
+    const speedStep = 15;         // speed up per level
+
+    let running = false;
+    let gameOver = false;
+    let lastMoveAt = 0;           // timestamp of last move
+
+    let snake, dir, nextDir, food, score, level, foodsEaten;
+
+    function resetState(){
+      snake = [{ x: 10, y: 10 }];
+      dir = 'right';
+      nextDir = 'right';
+      food = placeFood();
+      score = 0; level = 1; foodsEaten = 0;
+      setSpeed(initialSpeed);
+      updateHUD();
+      setOverlay(true, 'Snake', 'Eat 10 apples to level up. Use ⬆️⬇️⬅️➡️ or WASD.');
+    }
+
+    function setOverlay(show, title = '', text = ''){
+      overlay.classList.toggle('hidden', !show);
+      overlayTitle.textContent = title;
+      overlayText.textContent = text;
+    }
+
+    function setSpeed(ms){ elSpeed.textContent = ms; currentSpeed = ms; }
+    let currentSpeed = initialSpeed;
+
+    // High score
+    const BEST_KEY = 'snakeHighScoreV2';
+    function getBest(){ return Number(localStorage.getItem(BEST_KEY) || 0); }
+    function setBest(v){ localStorage.setItem(BEST_KEY, String(v)); }
+
+    function updateHUD(){
+      elScore.textContent = score;
+      elLevel.textContent = level;
+      const best = Math.max(getBest(), score);
+      elBest.textContent = best;
+    }
+
+    // ===== Input =====
+    const opposite = { up: 'down', down: 'up', left: 'right', right: 'left' };
+    function setNextDir(d){
+      if (d && d !== opposite[dir]) nextDir = d; // ignore instant reverse
+    }
+
+    window.addEventListener('keydown', e => {
+      const k = e.key.toLowerCase();
+      if ([ 'arrowup','arrowdown','arrowleft','arrowright','w','a','s','d' ].includes(k)) e.preventDefault();
+      if (k === 'p') return togglePause();
+      if (k === 'r') return restart();
+      if (k === ' ' || k === 'enter') return start();
+      if (k === 'arrowup' || k === 'w') setNextDir('up');
+      if (k === 'arrowdown' || k === 's') setNextDir('down');
+      if (k === 'arrowleft' || k === 'a') setNextDir('left');
+      if (k === 'arrowright' || k === 'd') setNextDir('right');
+    }, { passive: false });
+
+    // ===== Core loop (time-based) =====
+    function loop(ts){
+      if (running && !gameOver){
+        if (ts - lastMoveAt >= currentSpeed){
+          step();
+          lastMoveAt = ts;
+        }
+      }
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function start(){
+      if (gameOver) return restart();
+      running = true; setOverlay(false);
+      sBg.volume = 0.5; sBg.play().catch(()=>{});
+    }
+
+    function togglePause(){
+      if (gameOver) return; // ignore when over
+      running = !running;
+      setOverlay(!running, running ? '': 'Paused', running ? '': 'Press Start to continue.');
+      if (running) sBg.play().catch(()=>{}); else sBg.pause();
+    }
+
+    function restart(){
+      gameOver = false; running = false; sBg.pause();
+      resetState();
+    }
+
+    // ===== Update step =====
+    function step(){
+      // apply buffered direction (avoid reversing into self)
+      if (nextDir && nextDir !== opposite[dir]) dir = nextDir;
+
+      const head = { ...snake[0] };
+      if (dir === 'up') head.y -= 1;
+      if (dir === 'down') head.y += 1;
+      if (dir === 'left') head.x -= 1;
+      if (dir === 'right') head.x += 1;
+
+      // collisions: walls
+      if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID){
+        return endGame();
+      }
+      // collisions: self
+      if (snake.some(seg => seg.x === head.x && seg.y === head.y)){
+        return endGame();
+      }
+
+      // move
+      snake.unshift(head);
+
+      // eat?
+      if (head.x === food.x && head.y === food.y){
+        score += 1; foodsEaten += 1; updateHUD();
+        playSafe(sEat);
+        // level up every 10 apples
+        if (foodsEaten % 10 === 0){
+          level += 1; updateHUD();
+          const next = Math.max(minSpeed, currentSpeed - speedStep);
+          setSpeed(next);
+          playSafe(sLevel);
+          flashBanner(`Level ${level}!`);
+        }
+        food = placeFood();
+      } else {
+        snake.pop(); // standard move (no growth)
+      }
+    }
+
+    function endGame(){
+      gameOver = true; running = false; sBg.pause(); playSafe(sOver);
+      setBest(Math.max(getBest(), score)); updateHUD();
+      setOverlay(true, 'Game Over', `Final score: ${score}. Press Restart to try again.`);
+    }
+
+    // ===== Food placement (avoid snake body) =====
+    function placeFood(){
+      let fx, fy;
+      do {
+        fx = Math.floor(Math.random() * GRID);
+        fy = Math.floor(Math.random() * GRID);
+      } while (snake && snake.some(seg => seg.x === fx && seg.y === fy));
+      return { x: fx, y: fy };
+    }
+
+    // ===== Draw =====
+    function draw(){
+      // clear
+      ctx.clearRect(0,0,canvas.width, canvas.height);
+
+      // subtle grid
+      ctx.globalAlpha = 0.06; ctx.strokeStyle = '#93c5fd';
+      for (let i=0;i<=GRID;i++){
+        ctx.beginPath(); ctx.moveTo(i*CELL,0); ctx.lineTo(i*CELL, canvas.height); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0,i*CELL); ctx.lineTo(canvas.width, i*CELL); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      // food
+      drawCell(food.x, food.y, '#ef4444');
+
+      // snake
+      snake.forEach((seg, i) => {
+        const c = i===0 ? '#34d399' : '#22c55e';
+        drawCell(seg.x, seg.y, c);
+      });
+
+      // HUD text inside canvas (extra)
+      ctx.fillStyle = '#e5e7eb';
+      ctx.font = 'bold 14px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      ctx.fillText(`Score ${score}`, 8, 16);
+      ctx.textAlign = 'right';
+      ctx.fillText(`Lvl ${level}  ·  ${currentSpeed}ms`, canvas.width-8, 16);
+      ctx.textAlign = 'start';
+    }
+
+    function drawCell(cx, cy, fill){
+      const x = cx * CELL; const y = cy * CELL; const r = 6; // rounded squares
+      ctx.fillStyle = fill;
+      roundRect(ctx, x+1, y+1, CELL-2, CELL-2, r); ctx.fill();
+    }
+
+    function roundRect(ctx, x, y, w, h, r){
+      const rr = Math.min(r, w/2, h/2);
+      ctx.beginPath();
+      ctx.moveTo(x+rr, y);
+      ctx.arcTo(x+w, y, x+w, y+h, rr);
+      ctx.arcTo(x+w, y+h, x, y+h, rr);
+      ctx.arcTo(x, y+h, x, y, rr);
+      ctx.arcTo(x, y, x+w, y, rr);
+      ctx.closePath();
+    }
+
+    function flashBanner(text){
+      // quick visual feedback on level-up
+      const prev = overlayText.textContent;
+      overlayText.textContent = text;
+      overlay.classList.remove('hidden');
+      setTimeout(()=>{ overlay.classList.add('hidden'); overlayText.textContent = prev; }, 700);
+    }
+
+    function playSafe(audio){ try { audio.currentTime = 0; audio.play(); } catch(_){} }
+
+    // ===== Boot =====
+    resetState();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
