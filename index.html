@@ -275,6 +275,39 @@
       roundRect(ctx, x+1, y+1, CELL-2, CELL-2, r); ctx.fill();
     }
 
+    // Touch controls for mobile
+// let startX, startY;
+
+// document.addEventListener("touchstart", e => {
+//   startX = e.touches[0].clientX;
+//   startY = e.touches[0].clientY;
+// });
+
+// document.addEventListener("touchend", e => {
+//   let endX = e.changedTouches[0].clientX;
+//   let endY = e.changedTouches[0].clientY;
+
+//   let dx = endX - startX;
+//   let dy = endY - startY;
+
+//   if (Math.abs(dx) > Math.abs(dy)) {
+//     // Horizontal swipe
+//     if (dx > 0 && currentDirection !== "LEFT") {
+//       currentDirection = "RIGHT";
+//     } else if (dx < 0 && currentDirection !== "RIGHT") {
+//       currentDirection = "LEFT";
+//     }
+//   } else {
+//     // Vertical swipe
+//     if (dy > 0 && currentDirection !== "UP") {
+//       currentDirection = "DOWN";
+//     } else if (dy < 0 && currentDirection !== "DOWN") {
+//       currentDirection = "UP";
+//     }
+//   }
+// });
+
+
     function roundRect(ctx, x, y, w, h, r){
       const rr = Math.min(r, w/2, h/2);
       ctx.beginPath();
@@ -299,6 +332,35 @@
     // ===== Boot =====
     resetState();
     requestAnimationFrame(loop);
+
+
+
+    // ===== Swipe controls for mobile (Android/iPhone) =====
+let startX, startY;
+
+document.addEventListener("touchstart", e => {
+  startX = e.touches[0].clientX;
+  startY = e.touches[0].clientY;
+});
+
+document.addEventListener("touchend", e => {
+  let endX = e.changedTouches[0].clientX;
+  let endY = e.changedTouches[0].clientY;
+
+  let dx = endX - startX;
+  let dy = endY - startY;
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    // Horizontal swipe
+    if (dx > 0) setNextDir("right");
+    else setNextDir("left");
+  } else {
+    // Vertical swipe
+    if (dy > 0) setNextDir("down");
+    else setNextDir("up");
+  }
+});
+
   </script>
 </body>
 </html>
